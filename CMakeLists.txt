@@ -26,6 +26,7 @@ pico_sdk_init()
 
 add_executable(${PROJECT_NAME}  
         ATIVIDADE-04.c # Código principal em C
+        libs/luminosity.c
         )
 
 target_link_libraries(${PROJECT_NAME} 

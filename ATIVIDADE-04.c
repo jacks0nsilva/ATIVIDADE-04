@@ -8,7 +8,7 @@
 #include "lwip/tcp.h"   // Lightweight IP stack - fornece funções e estruturas para trabalhar com o protocolo TCP
 #include "lwip/netif.h" // Lightweight IP stack - fornece funções e estruturas para trabalhar com interfaces de rede (netif)
 #include "credenciais.h" // Arquivo de credenciais - deve conter as credenciais da rede Wi-Fi
-
+#include "libs/luminosity.h"
 
 // Credenciais WIFI - Tome cuidado se publicar no github!
 //#define WIFI_SSID "SUA REDE WIFI"
@@ -19,6 +19,7 @@
 #define LED_BLUE_PIN 12                 // GPIO12 - LED azul
 #define LED_GREEN_PIN 11                // GPIO11 - LED verde
 #define LED_RED_PIN 13                  // GPIO13 - LED vermelho
+uint16_t luminosity_value = 0; // Variável para armazenar o valor de luminosidade
 
 // Inicializar os Pinos GPIO para acionamento dos LEDs da BitDogLab
 void gpio_led_bitdog(void);
@@ -28,9 +29,6 @@ static err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err);
 
 // Função de callback para processar requisições HTTP
 static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err);
-
-// Leitura da temperatura interna
-float temp_read(void);
 
 // Tratamento do request do usuário
 void user_request(char **request);
@@ -98,7 +96,7 @@ int main()
 
     // Inicializa o conversor ADC
     adc_init();
-    adc_set_temp_sensor_enabled(true);
+    adc_gpio_init(27); // Eixo X do Joystick
 
     while (true)
     {
@@ -106,7 +104,7 @@ int main()
         * Efetuar o processamento exigido pelo cyw43_driver ou pela stack TCP/IP.
         * Este método deve ser chamado periodicamente a partir do ciclo principal 
         * quando se utiliza um estilo de sondagem pico_cyw43_arch 
-        */
+        */     
         cyw43_arch_poll(); // Necessário para manter o Wi-Fi ativo
         sleep_ms(100);      // Reduz o uso da CPU
     }
@@ -144,48 +142,16 @@ static err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
 // Tratamento do request do usuário - digite aqui
 void user_request(char **request){
 
-    if (strstr(*request, "GET /blue_on") != NULL)
+    if (strstr(*request, "GET /blue_onn") != NULL)
     {
         gpio_put(LED_BLUE_PIN, 1);
     }
-    else if (strstr(*request, "GET /blue_off") != NULL)
+    else if (strstr(*request, "GET /update") != NULL)
     {
-        gpio_put(LED_BLUE_PIN, 0);
-    }
-    else if (strstr(*request, "GET /green_on") != NULL)
-    {
-        gpio_put(LED_GREEN_PIN, 1);
-    }
-    else if (strstr(*request, "GET /green_off") != NULL)
-    {
-        gpio_put(LED_GREEN_PIN, 0);
-    }
-    else if (strstr(*request, "GET /red_on") != NULL)
-    {
-        gpio_put(LED_RED_PIN, 1);
-    }
-    else if (strstr(*request, "GET /red_off") != NULL)
-    {
-        gpio_put(LED_RED_PIN, 0);
-    }
-    else if (strstr(*request, "GET /on") != NULL)
-    {
-        cyw43_arch_gpio_put(LED_PIN, 1);
-    }
-    else if (strstr(*request, "GET /off") != NULL)
-    {
-        cyw43_arch_gpio_put(LED_PIN, 0);
+        luminosity_value = verify_luminosity();
+        printf("Luminosidade: %d\n", luminosity_value);
     }
 };
-
-// Leitura da temperatura interna
-float temp_read(void){
-    adc_select_input(4);
-    uint16_t raw_value = adc_read();
-    const float conversion_factor = 3.3f / (1 << 12);
-    float temperature = 27.0f - ((raw_value * conversion_factor) - 0.706f) / 0.001721f;
-        return temperature;
-}
 
 // Função de callback para processar requisições HTTP
 static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
@@ -207,8 +173,7 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
     // Tratamento de request - Controle dos LEDs
     user_request(&request);
     
-    // Leitura da temperatura interna
-    float temperature = temp_read();
+
 
     // Cria a resposta HTML
     char html[1024];
@@ -221,7 +186,7 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
             "<!DOCTYPE html>\n"
             "<html>\n"
             "<head>\n"
-            "<title> Embarcatech - LED Control </title>\n"
+            "<title> Embarcatech - Jardim Inteligente </title>\n"
             "<style>\n"
             "body { background-color: #b5e5fb; font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }\n"
             "h1 { font-size: 64px; margin-bottom: 30px; }\n"
@@ -230,17 +195,12 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
             "</style>\n"
             "</head>\n"
             "<body>\n"
-            "<h1>Embarcatech: LED Control</h1>\n"
-            "<form action=\"./blue_on\"><button>Ligar Azul</button></form>\n"
-            "<form action=\"./blue_off\"><button>Desligar Azul</button></form>\n"
-            "<form action=\"./green_on\"><button>Ligar Verde</button></form>\n"
-            "<form action=\"./green_off\"><button>Desligar Verde</button></form>\n"
-            "<form action=\"./red_on\"><button>Ligar Vermelho</button></form>\n"
-            "<form action=\"./red_off\"><button>Desligar Vermelho</button></form>\n"
-            "<p class=\"temperature\">Temperatura Interna: %.2f &deg;C</p>\n"
+            "<h1>Embarcatech: Jardim Inteligente</h1>\n"
+            "<form action=\"./update\"><button>Atualizar Status</button></form>\n"
+            "<p>Luminosidade: %d</p>\n"
             "</body>\n"
             "</html>\n",
-            temperature);
+            luminosity_value);
 
     // Escreve dados para envio (mas não os envia imediatamente).
     tcp_write(tpcb, html, strlen(html), TCP_WRITE_FLAG_COPY);
