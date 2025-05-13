@@ -12,13 +12,32 @@ pico_sdk_init()
 
 add_executable(${PROJECT_NAME}  
         ATIVIDADE-04.c # Código principal em C
+        libs/ssd1306.c
         )
 
 target_link_libraries(${PROJECT_NAME} 
         pico_stdlib 
+        hardware_gpio
+        hardware_adc
+        pico_cyw43_arch_lwip_threadsafe_background
+        hardware_i2c
         )
 
 pico_enable_stdio_usb(${PROJECT_NAME} 1)
 pico_enable_stdio_uart(${PROJECT_NAME} 0)
+
+# Add the standard include files to the build
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}
+    ${PICO_SDK_PATH}/lib/lwip/src/include
+    ${PICO_SDK_PATH}/lib/lwip/src/include/arch
+    ${PICO_SDK_PATH}/lib/lwip/src/include/lwip
+)
+
+target_sources(${PROJECT_NAME} PRIVATE
+    ${PICO_SDK_PATH}/lib/lwip/src/apps/http/httpd.c
+    ${PICO_SDK_PATH}/lib/lwip/src/apps/http/fs.c
+)
+
 
 pico_add_extra_outputs(${PROJECT_NAME})
