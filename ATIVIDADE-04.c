@@ -3,31 +3,34 @@
 #include <stdlib.h> // funções para realizar várias operações, incluindo alocação de memória dinâmica 
 #include "pico/stdlib.h"    // Biblioteca da Raspberry Pi Pico para funções padrão 
 #include "hardware/adc.h"   // Biblioteca da Raspberry Pi Pico para manipulação do conversor ADC
+#include "hardware/i2c.h"    // Biblioteca da Raspberry Pi Pico para comunicação I2C
+#include "hardware/timer.h" // Biblioteca da Raspberry Pi Pico para manipulação de temporizadores
 #include "pico/cyw43_arch.h"    // Biblioteca para arquitetura Wi-Fi da Pico com CYW43  
 #include "lwip/pbuf.h"  // Lightweight IP stack - manipulação de buffers de pacotes de rede
 #include "lwip/tcp.h"   // Lightweight IP stack - fornece funções e estruturas para trabalhar com o protocolo TCP
 #include "lwip/netif.h" // Lightweight IP stack - fornece funções e estruturas para trabalhar com interfaces de rede (netif)
-#include "credenciais.h" // Arquivo de credenciais - deve conter as credenciais da rede Wi-Fi
 
-#include "libs/ssd1306.h"
-#include "hardware/i2c.h"
-#include "libs/definicoes.h"
-#include "hardware/timer.h"
+/* BIBLIOTECAS LOCALS */
+#include "credenciais.h" // Arquivo de credenciais - deve conter as credenciais da rede Wi-Fi
+#include "libs/ssd1306.h" // Biblioteca para controle do display OLED SSD1306
+#include "libs/definicoes.h" // Definições de pinos e estruturas
+
 
 // Credenciais WIFI - Tome cuidado se publicar no github!
 //#define WIFI_SSID "SUA REDE WIFI"
 //#define WIFI_PASSWORD "SUA SENHA"
 
-// Definição dos pinos dos LEDs
-#define LED_PIN CYW43_WL_GPIO_LED_PIN   // GPIO do CI CYW43
-static volatile uint32_t last_time = 0;
-static volatile bool alert = false;
-static volatile bool alert_1, alert_2 = false;
-bool controle_automatico = true;
-bool luz_manual = false;
+// Definição das variáveis
+static volatile uint32_t last_time = 0; // Variável para armazenar o último tempo em microssegundos
+static volatile bool alert = false; // Alerta geral
+static volatile bool alert_1, alert_2 = false; // Alerta 1 e Alerta 2
+bool controle_automatico = true; // Controle automático (fotorresistor) das luzes
+bool luz_manual = false; // Acionamento manual das luzes
+uint16_t luminosity_value = 0; // Variável para armazenar o valor de luminosidade
+ssd1306_t ssd; // Struct para o display OLED
 
 
-
+// Definição dos pinos GPIO para acionamento dos LEDs e botões da BitDogLab
 PIN_GPIO gpio_bitdog[5] = {
     {LED_BLUE_PIN, GPIO_OUT},
     {LED_GREEN_PIN, GPIO_OUT},
@@ -36,29 +39,34 @@ PIN_GPIO gpio_bitdog[5] = {
     {BUTTON_B, GPIO_IN}
 };
 
-
-ssd1306_t ssd;
-uint16_t luminosity_value = 0; // Variável para armazenar o valor de luminosidade
+/*DECLRAÇÃO DAS FUNÇÕES */
 
 // Inicializar os Pinos GPIO para acionamento dos LEDs da BitDogLab
-void init_gpio_bitdog(void);
+void init_gpio_bitdog(void); 
 
 // Função de callback ao aceitar conexões TCP
-static err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err);
+static err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err); 
 
 // Função de callback para processar requisições HTTP
-static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err);
+static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err); 
 
 // Tratamento do request do usuário
-void user_request(char **request);
+void user_request(char **request); 
 
-void init_display();
+// Inicializa o display OLED
+void init_display(); 
 
-void gpio_irq_handler(uint gpio, uint32_t events);
+// Função de interrupção para os botões
+void gpio_irq_handler(uint gpio, uint32_t events); 
 
-void alert_lights();
-uint16_t verify_luminosity();
-void control_lights(uint16_t luminosity_value);
+// Função para acender o LED vermelho quando o alarme estiver ativo
+void alert_lights(); 
+
+// Função para verificar a luminosidade
+uint16_t verify_luminosity(); 
+
+// Função para controlar as luzes do jardim com base na luminosidade
+void control_lights(uint16_t luminosity_value); 
 
 
 // Função principal
@@ -70,7 +78,8 @@ int main()
     // Inicializar os Pinos GPIO para acionamento dos LEDs da BitDogLab
     init_gpio_bitdog();
 
-    init_display();
+    // Inicializa o display OLED
+    init_display(); 
 
     //Inicializa a arquitetura do cyw43
     while (cyw43_arch_init())
@@ -79,9 +88,6 @@ int main()
         sleep_ms(100);
         return -1;
     }
-
-    // GPIO do CI CYW43 em nível baixo
-    cyw43_arch_gpio_put(LED_PIN, 0);
 
     // Ativa o Wi-Fi no modo Station, de modo a que possam ser feitas ligações a outros pontos de acesso Wi-Fi.
     cyw43_arch_enable_sta_mode();
@@ -129,31 +135,27 @@ int main()
     tcp_accept(server, tcp_server_accept);
     printf("Servidor ouvindo na porta 80\n");
 
-    // Inicializa o conversor ADC
-    adc_init();
+    adc_init(); // Inicializa o conversor ADC
     adc_gpio_init(27); // Eixo X do Joystick
 
+    // Habilita interrupções para os botões A e B
     gpio_set_irq_enabled_with_callback(BUTTON_A, GPIO_IRQ_EDGE_FALL, true, &gpio_irq_handler);
     gpio_set_irq_enabled_with_callback(BUTTON_B, GPIO_IRQ_EDGE_FALL, true, &gpio_irq_handler);
 
     while (true)
     {
-        /* 
-        * Efetuar o processamento exigido pelo cyw43_driver ou pela stack TCP/IP.
-        * Este método deve ser chamado periodicamente a partir do ciclo principal 
-        * quando se utiliza um estilo de sondagem pico_cyw43_arch 
-        */
-
         luminosity_value = verify_luminosity();
+        // Se o controle automático estiver ativado, controla as luzes com base na luminosidade
+        // Caso contrário, as luzes são controladas manualmente
         if (controle_automatico) {
             control_lights(luminosity_value);
         } else {
-            gpio_put(gpio_bitdog[0].pin_gpio, luz_manual); // LED verde
+            gpio_put(gpio_bitdog[0].pin_gpio, luz_manual); 
         }
+
         char luminosity_convert[6];
         sprintf(luminosity_convert, "%d %s", luminosity_value, "%");
-        // Exibe o valor no console (opcional)
-        printf("Luminosidade: %d%%\n", luminosity_value);
+
 
         ssd1306_fill(&ssd, false);
         ssd1306_draw_string(&ssd, "Luz: ", 0, 1);
@@ -166,6 +168,7 @@ int main()
         ssd1306_draw_string(&ssd, alert_2 ? "ATIVO" : "INATIVO", 80, 25);
 
         ssd1306_send_data(&ssd);
+
         alert_lights();
         cyw43_arch_poll(); // Necessário para manter o Wi-Fi ativo
         sleep_ms(1000);      // Reduz o uso da CPU
@@ -236,7 +239,7 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
 
     // Cria a resposta HTML
     char html[1024];
-    const char *bg_color = (alert ? "#d10202" : "#f0f8ff"); // vermelho claro se alarme ativo
+    const char *bg_color = (alert ? "#ff4f4f" : "#f0f8ff"); // vermelho claro se alarme ativo
     // Instruções html do webserver
     snprintf(html, sizeof(html),
     "HTTP/1.1 200 OK\r\n"
@@ -343,7 +346,6 @@ uint16_t verify_luminosity(){
     adc_select_input(1);
     uint16_t adc_value = adc_read();
     uint16_t luminosity = (adc_value * 100) / 4095; // Convertendo para porcentagem
-    //printf("Luminosidade: %d%%\n", luminosity);
     return luminosity;
     sleep_ms(100);
 }
