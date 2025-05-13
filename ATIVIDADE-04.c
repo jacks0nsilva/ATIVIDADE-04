@@ -27,6 +27,7 @@ bool controle_automatico = true;
 bool luz_manual = false;
 
 
+
 PIN_GPIO gpio_bitdog[5] = {
     {LED_BLUE_PIN, GPIO_OUT},
     {LED_GREEN_PIN, GPIO_OUT},
@@ -232,7 +233,7 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
 
     // Cria a resposta HTML
     char html[1024];
-
+    const char *bg_color = (alert ? "#d10202" : "#f0f8ff"); // vermelho claro se alarme ativo
     // Instruções html do webserver
     snprintf(html, sizeof(html),
     "HTTP/1.1 200 OK\r\n"
@@ -244,10 +245,12 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
     "<title>Jardim Inteligente</title>\n"
     "<meta http-equiv=\"refresh\" content=\"5\">\n"
     "<style>\n"
-    "body { font-family: Arial; text-align: center; background-color: #f0f8ff; }\n"
+    "body { font-family: Arial; text-align: center; background-color: %s; }\n"
     "h1 { color: #006400; }\n"
     ".status { font-size: 24px; margin: 20px; }\n"
     ".luminosity { font-size: 48px; color: %s; }\n"
+    "form { display: inline-block; margin: 10px; }\n"
+    "button { padding: 10px 20px; font-size: 16px; cursor: pointer; }\n"
     "</style>\n"
     "</head>\n"
     "<body>\n"
@@ -258,21 +261,20 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
     "<div class=\"status\">Alarme 1: <span style=\"color:%s;\">%s</span></div>\n"
     "<div class=\"status\">Alarme 2: <span style=\"color:%s;\">%s</span></div>\n"
     "<form action=\".update\"><button>Atualizar</button></form>\n"
-    "<form action=\"/toggle_auto\"><button>%s Controle Automático</button></form>\n"
+    "<form action=\"/toggle_auto\"><button>%s Controle Automatico</button></form>\n"
     "<form action=\"/toggle_light\"><button>%s Luz Manual</button></form>\n"
     "</body>\n"
     "</html>",
+    bg_color,
     (luminosity_value < 30 ? "red" : "green"),
     luminosity_value,
-    (controle_automatico ? "Automático" : "Manual"),
+    (controle_automatico ? "Automatico" : "Manual"),
     (controle_automatico ? (luminosity_value < 30 ? "LIGADAS" : "DESLIGADAS") : (luz_manual ? "LIGADAS" : "DESLIGADAS")),
     (alert_1 ? "red" : "green"), (alert_1 ? "ATIVADO" : "DESATIVADO"),
     (alert_2 ? "red" : "green"), (alert_2 ? "ATIVADO" : "DESATIVADO"),
     (controle_automatico ? "Desativar" : "Ativar"),
     (luz_manual ? "Desligar" : "Ligar")
     );
-    
-    
     
     // Escreve dados para envio (mas não os envia imediatamente).
     tcp_write(tpcb, html, strlen(html), TCP_WRITE_FLAG_COPY);
