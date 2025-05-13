@@ -238,7 +238,7 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
 
     // Cria a resposta HTML
     char html[1024];
-    const char *bg_color = (alert ? "#ff4f4f" : "#f0f8ff"); // vermelho claro se alarme ativo
+    const char *bg_color = (alert ? "#fc8981" : "#f0f8ff"); // vermelho claro se alarme ativo
     // Instruções html do webserver
     snprintf(html, sizeof(html),
     "HTTP/1.1 200 OK\r\n"
@@ -247,7 +247,7 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
     "<!DOCTYPE html>\n"
     "<html>\n"
     "<head>\n"
-    "<title>Residência Inteligente</title>\n"
+    "<title>Residencia Inteligente</title>\n"
     "<meta http-equiv=\"refresh\" content=\"5\">\n"
     "<style>\n"
     "body { font-family: Arial; text-align: center; background-color: %s; }\n"
@@ -259,7 +259,7 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
     "</style>\n"
     "</head>\n"
     "<body>\n"
-    "<h1>Residência Inteligente</h1>\n"
+    "<h1>Residencia Inteligente</h1>\n"
     "<div class=\"luminosity\">Luminosidade: %d%%</div>\n"
     "<div class=\"status\">Modo: %s</div>\n"
     "<div class=\"status\">Luzes do jardim: %s</div>\n"
