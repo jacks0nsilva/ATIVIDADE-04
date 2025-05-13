@@ -26,7 +26,6 @@ pico_sdk_init()
 
 add_executable(${PROJECT_NAME}  
         ATIVIDADE-04.c # Código principal em C
-        libs/luminosity.c
         libs/ssd1306.c
         )
 

@@ -8,7 +8,7 @@
 #include "lwip/tcp.h"   // Lightweight IP stack - fornece funções e estruturas para trabalhar com o protocolo TCP
 #include "lwip/netif.h" // Lightweight IP stack - fornece funções e estruturas para trabalhar com interfaces de rede (netif)
 #include "credenciais.h" // Arquivo de credenciais - deve conter as credenciais da rede Wi-Fi
-#include "libs/luminosity.h"
+
 #include "libs/ssd1306.h"
 #include "hardware/i2c.h"
 #include "libs/definicoes.h"
@@ -57,6 +57,9 @@ void init_display();
 void gpio_irq_handler(uint gpio, uint32_t events);
 
 void alert_lights();
+uint16_t verify_luminosity();
+void control_lights(uint16_t luminosity_value);
+
 
 // Função principal
 int main()
@@ -333,5 +336,22 @@ void alert_lights()
         gpio_put(gpio_bitdog[2].pin_gpio, false);
     } else{
         gpio_put(gpio_bitdog[2].pin_gpio, false);
+    }
+}
+
+uint16_t verify_luminosity(){
+    adc_select_input(1);
+    uint16_t adc_value = adc_read();
+    uint16_t luminosity = (adc_value * 100) / 4095; // Convertendo para porcentagem
+    //printf("Luminosidade: %d%%\n", luminosity);
+    return luminosity;
+    sleep_ms(100);
+}
+
+void control_lights(uint16_t luminosity_value){
+    if(luminosity_value < 30){
+        gpio_put(LED_BLUE_PIN, 1);
+    } else {
+        gpio_put(LED_BLUE_PIN, 0);
     }
 }
