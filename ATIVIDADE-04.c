@@ -22,6 +22,11 @@
 #define LED_PIN CYW43_WL_GPIO_LED_PIN   // GPIO do CI CYW43
 static volatile uint32_t last_time = 0;
 static volatile bool alert = false;
+static volatile bool alert_1, alert_2 = false;
+bool controle_automatico = true;
+bool luz_manual = false;
+
+
 PIN_GPIO gpio_bitdog[5] = {
     {LED_BLUE_PIN, GPIO_OUT},
     {LED_GREEN_PIN, GPIO_OUT},
@@ -136,7 +141,11 @@ int main()
         */
 
         luminosity_value = verify_luminosity();
-        control_lights(luminosity_value);
+        if (controle_automatico) {
+            control_lights(luminosity_value);
+        } else {
+            gpio_put(gpio_bitdog[0].pin_gpio, luz_manual); // LED verde
+        }
         char luminosity_convert[6];
         sprintf(luminosity_convert, "%d %s", luminosity_value, "%");
         // Exibe o valor no console (opcional)
@@ -145,6 +154,13 @@ int main()
         ssd1306_fill(&ssd, false);
         ssd1306_draw_string(&ssd, "Luz: ", 0, 1);
         ssd1306_draw_string(&ssd, luminosity_convert, 40, 1);
+
+        ssd1306_draw_string(&ssd, "Alerta 1:", 0, 9);
+        ssd1306_draw_string(&ssd, alert_1 ? "ATIVO" : "INATIVO", 80, 9);
+
+        ssd1306_draw_string(&ssd, "Alerta 2:", 0, 25);
+        ssd1306_draw_string(&ssd, alert_2 ? "ATIVO" : "INATIVO", 80, 25);
+
         ssd1306_send_data(&ssd);
         alert_lights();
         cyw43_arch_poll(); // Necessário para manter o Wi-Fi ativo
@@ -182,15 +198,15 @@ static err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
 
 // Tratamento do request do usuário - digite aqui
 void user_request(char **request){
-
-    if (strstr(*request, "GET /update") != NULL)
-    {
-        //luminosity_value = verify_luminosity();
-        //control_lights(luminosity_value);
-        //printf("Luminosidade: %d\n", luminosity_value);
-        // Não faz nada, apenas atualiza a página
+    if (strstr(*request, "GET /update") != NULL) {
+        // Apenas atualiza a página
+    } else if (strstr(*request, "GET /toggle_auto") != NULL) {
+        controle_automatico = !controle_automatico;
+    } else if (strstr(*request, "GET /toggle_light") != NULL) {
+        luz_manual = !luz_manual;
     }
-};
+}
+
 
 // Função de callback para processar requisições HTTP
 static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
@@ -226,7 +242,7 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
     "<html>\n"
     "<head>\n"
     "<title>Jardim Inteligente</title>\n"
-    "<meta http-equiv=\"refresh\" content=\"5\">  <!-- Auto-atualiza a cada 5s -->\n"
+    "<meta http-equiv=\"refresh\" content=\"5\">\n"
     "<style>\n"
     "body { font-family: Arial; text-align: center; background-color: #f0f8ff; }\n"
     "h1 { color: #006400; }\n"
@@ -237,17 +253,26 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
     "<body>\n"
     "<h1>Jardim Inteligente</h1>\n"
     "<div class=\"luminosity\">Luminosidade: %d%%</div>\n"
+    "<div class=\"status\">Modo: %s</div>\n"
     "<div class=\"status\">Luzes do jardim: %s</div>\n"
-    "<div class=\"status\">Alarme: <span style=\"color:%s;\">%s</span></div>\n"
-    "<form action=\".update\"><button>Update</button></form>\n"
+    "<div class=\"status\">Alarme 1: <span style=\"color:%s;\">%s</span></div>\n"
+    "<div class=\"status\">Alarme 2: <span style=\"color:%s;\">%s</span></div>\n"
+    "<form action=\".update\"><button>Atualizar</button></form>\n"
+    "<form action=\"/toggle_auto\"><button>%s Controle Automático</button></form>\n"
+    "<form action=\"/toggle_light\"><button>%s Luz Manual</button></form>\n"
     "</body>\n"
     "</html>",
-    (luminosity_value < 30 ? "red" : "green"),  // Cor da luminosidade
+    (luminosity_value < 30 ? "red" : "green"),
     luminosity_value,
-    (luminosity_value < 30 ? "LIGADAS" : "DESLIGADAS"),
-    (alert ? "red" : "green"),                  // Cor do texto do alarme
-    (alert ? "ATIVADO" : "DESATIVADO")         // Texto do alarme
+    (controle_automatico ? "Automático" : "Manual"),
+    (controle_automatico ? (luminosity_value < 30 ? "LIGADAS" : "DESLIGADAS") : (luz_manual ? "LIGADAS" : "DESLIGADAS")),
+    (alert_1 ? "red" : "green"), (alert_1 ? "ATIVADO" : "DESATIVADO"),
+    (alert_2 ? "red" : "green"), (alert_2 ? "ATIVADO" : "DESATIVADO"),
+    (controle_automatico ? "Desativar" : "Ativar"),
+    (luz_manual ? "Desligar" : "Ligar")
     );
+    
+    
     
     // Escreve dados para envio (mas não os envia imediatamente).
     tcp_write(tpcb, html, strlen(html), TCP_WRITE_FLAG_COPY);
@@ -283,12 +308,20 @@ void gpio_irq_handler(uint gpio, uint32_t events)
 {
     uint32_t current_time = to_us_since_boot(get_absolute_time());
     
-    if(current_time - last_time > 200000){
+    if (current_time - last_time > 200000) {
         last_time = current_time;
-        // Qualquer um dos sensores de presença (simulado por botões) foi pressionado, aciona o alerta
-        alert = !alert;
+        
+        if (gpio == BUTTON_A) {
+            alert_1 = !alert_1;
+        } else if (gpio == BUTTON_B) {
+            alert_2 = !alert_2;
+        }
+
+        // Alerta geral é ativado se qualquer um estiver ativo
+        alert = alert_1 || alert_2;
     }
 }
+
 
 void alert_lights()
 {
