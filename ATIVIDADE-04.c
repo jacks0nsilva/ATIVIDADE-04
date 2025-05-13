@@ -11,14 +11,13 @@
 #include "lwip/netif.h" // Lightweight IP stack - fornece funções e estruturas para trabalhar com interfaces de rede (netif)
 
 /* BIBLIOTECAS LOCALS */
-#include "credenciais.h" // Arquivo de credenciais - deve conter as credenciais da rede Wi-Fi
 #include "libs/ssd1306.h" // Biblioteca para controle do display OLED SSD1306
 #include "libs/definicoes.h" // Definições de pinos e estruturas
 
 
 // Credenciais WIFI - Tome cuidado se publicar no github!
-//#define WIFI_SSID "SUA REDE WIFI"
-//#define WIFI_PASSWORD "SUA SENHA"
+#define WIFI_SSID "SUA REDE WIFI"
+#define WIFI_PASSWORD "SUA SENHA"
 
 // Definição das variáveis
 static volatile uint32_t last_time = 0; // Variável para armazenar o último tempo em microssegundos
