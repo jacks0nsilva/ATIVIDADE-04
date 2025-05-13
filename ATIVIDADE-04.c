@@ -15,7 +15,7 @@
 #include "libs/definicoes.h" // Definições de pinos e estruturas
 
 
-// Credenciais WIFI - Tome cuidado se publicar no github!
+// Credenciais WIFI - Altere para sua rede
 #define WIFI_SSID "SUA REDE WIFI"
 #define WIFI_PASSWORD "SUA SENHA"
 

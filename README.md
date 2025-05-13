@@ -64,3 +64,26 @@ A página HTML permite:
 - Visualizar o estado da luminosidade e do alerta.
 - Alternar entre modo automático e manual.
 - Acender ou apagar as luzes manualmente.
+
+## Como executar o projeto 🛠️
+
+1.  **Configuração do Ambiente:**
+
+    - Certifique-se de ter o SDK do Raspberry Pi Pico instalado e configurado corretamente.
+    - Configure as ferramentas de compilação (CMake, etc.).
+
+2.  **Clone o repositório**
+    ```
+    git clone https://github.com/jacks0nsilva/ATIVIDADE-04.git
+    ```
+3.  **Instale a extensão do Raspberry Pi Pico no seu VsCode**
+4.  **Usando a extensão do Raspberry Pi Pico, siga os passos:**
+5.  **Clean CMake: Para garantir que o projeto será compilado do zero**
+6.  **Altere as credenciais do Wi-Fi no arquivo `ATIVIDADE-04.c`**
+    ```c
+    #define WIFI_SSID "NOME_DA_REDE"
+    #define WIFI_PASSWORD "SENHA_DA_REDE"
+    ```
+7.  **Compile Project: Compilação dos binários**
+
+8.  **Run Project [USB]: Compila e copia o firmware para a placa automaticamente**
