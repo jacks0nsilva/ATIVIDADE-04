@@ -27,6 +27,7 @@ pico_sdk_init()
 add_executable(${PROJECT_NAME}  
         ATIVIDADE-04.c # Código principal em C
         libs/luminosity.c
+        libs/ssd1306.c
         )
 
 target_link_libraries(${PROJECT_NAME} 
@@ -34,6 +35,7 @@ target_link_libraries(${PROJECT_NAME}
         hardware_gpio
         hardware_adc
         pico_cyw43_arch_lwip_threadsafe_background
+        hardware_i2c
         )
 
 pico_enable_stdio_usb(${PROJECT_NAME} 1)

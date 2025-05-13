@@ -9,6 +9,10 @@
 #include "lwip/netif.h" // Lightweight IP stack - fornece funções e estruturas para trabalhar com interfaces de rede (netif)
 #include "credenciais.h" // Arquivo de credenciais - deve conter as credenciais da rede Wi-Fi
 #include "libs/luminosity.h"
+#include "libs/ssd1306.h"
+#include "hardware/i2c.h"
+#include "libs/definicoes.h"
+#include "hardware/timer.h"
 
 // Credenciais WIFI - Tome cuidado se publicar no github!
 //#define WIFI_SSID "SUA REDE WIFI"
@@ -16,13 +20,22 @@
 
 // Definição dos pinos dos LEDs
 #define LED_PIN CYW43_WL_GPIO_LED_PIN   // GPIO do CI CYW43
-#define LED_BLUE_PIN 12                 // GPIO12 - LED azul
-#define LED_GREEN_PIN 11                // GPIO11 - LED verde
-#define LED_RED_PIN 13                  // GPIO13 - LED vermelho
+static volatile uint32_t last_time = 0;
+static volatile bool alert = false;
+PIN_GPIO gpio_bitdog[5] = {
+    {LED_BLUE_PIN, GPIO_OUT},
+    {LED_GREEN_PIN, GPIO_OUT},
+    {LED_RED_PIN, GPIO_OUT},
+    {BUTTON_A, GPIO_IN},
+    {BUTTON_B, GPIO_IN}
+};
+
+
+ssd1306_t ssd;
 uint16_t luminosity_value = 0; // Variável para armazenar o valor de luminosidade
 
 // Inicializar os Pinos GPIO para acionamento dos LEDs da BitDogLab
-void gpio_led_bitdog(void);
+void init_gpio_bitdog(void);
 
 // Função de callback ao aceitar conexões TCP
 static err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err);
@@ -33,6 +46,12 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
 // Tratamento do request do usuário
 void user_request(char **request);
 
+void init_display();
+
+void gpio_irq_handler(uint gpio, uint32_t events);
+
+void alert_lights();
+
 // Função principal
 int main()
 {
@@ -40,7 +59,9 @@ int main()
     stdio_init_all();
 
     // Inicializar os Pinos GPIO para acionamento dos LEDs da BitDogLab
-    gpio_led_bitdog();
+    init_gpio_bitdog();
+
+    init_display();
 
     //Inicializa a arquitetura do cyw43
     while (cyw43_arch_init())
@@ -58,6 +79,10 @@ int main()
 
     // Conectar à rede WiFI - fazer um loop até que esteja conectado
     printf("Conectando ao Wi-Fi...\n");
+    ssd1306_fill(&ssd, false);
+    ssd1306_draw_string(&ssd, "Conectando ao  Wi-Fi...", 0, 1);
+    ssd1306_send_data(&ssd);
+
     while (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 20000))
     {
         printf("Falha ao conectar ao Wi-Fi\n");
@@ -65,6 +90,7 @@ int main()
         return -1;
     }
     printf("Conectado ao Wi-Fi\n");
+  
 
     // Caso seja a interface de rede padrão - imprimir o IP do dispositivo.
     if (netif_default)
@@ -98,15 +124,31 @@ int main()
     adc_init();
     adc_gpio_init(27); // Eixo X do Joystick
 
+    gpio_set_irq_enabled_with_callback(BUTTON_A, GPIO_IRQ_EDGE_FALL, true, &gpio_irq_handler);
+    gpio_set_irq_enabled_with_callback(BUTTON_B, GPIO_IRQ_EDGE_FALL, true, &gpio_irq_handler);
+
     while (true)
     {
         /* 
         * Efetuar o processamento exigido pelo cyw43_driver ou pela stack TCP/IP.
         * Este método deve ser chamado periodicamente a partir do ciclo principal 
         * quando se utiliza um estilo de sondagem pico_cyw43_arch 
-        */     
+        */
+
+        luminosity_value = verify_luminosity();
+        control_lights(luminosity_value);
+        char luminosity_convert[6];
+        sprintf(luminosity_convert, "%d %s", luminosity_value, "%");
+        // Exibe o valor no console (opcional)
+        printf("Luminosidade: %d%%\n", luminosity_value);
+
+        ssd1306_fill(&ssd, false);
+        ssd1306_draw_string(&ssd, "Luz: ", 0, 1);
+        ssd1306_draw_string(&ssd, luminosity_convert, 40, 1);
+        ssd1306_send_data(&ssd);
+        alert_lights();
         cyw43_arch_poll(); // Necessário para manter o Wi-Fi ativo
-        sleep_ms(100);      // Reduz o uso da CPU
+        sleep_ms(1000);      // Reduz o uso da CPU
     }
 
     //Desligar a arquitetura CYW43.
@@ -116,20 +158,19 @@ int main()
 
 // -------------------------------------- Funções ---------------------------------
 
-// Inicializar os Pinos GPIO para acionamento dos LEDs da BitDogLab
-void gpio_led_bitdog(void){
-    // Configuração dos LEDs como saída
-    gpio_init(LED_BLUE_PIN);
-    gpio_set_dir(LED_BLUE_PIN, GPIO_OUT);
-    gpio_put(LED_BLUE_PIN, false);
-    
-    gpio_init(LED_GREEN_PIN);
-    gpio_set_dir(LED_GREEN_PIN, GPIO_OUT);
-    gpio_put(LED_GREEN_PIN, false);
-    
-    gpio_init(LED_RED_PIN);
-    gpio_set_dir(LED_RED_PIN, GPIO_OUT);
-    gpio_put(LED_RED_PIN, false);
+// Inicializar os Pinos GPIO para acionamento dos LEDs e botões da BitDogLab
+void init_gpio_bitdog(void){
+    for(int i = 0; i< 5; i++){
+        gpio_init(gpio_bitdog[i].pin_gpio);
+        gpio_set_dir(gpio_bitdog[i].pin_gpio, gpio_bitdog[i].pin_dir);
+
+        if(gpio_bitdog[i].pin_dir == GPIO_IN){
+            gpio_pull_up(gpio_bitdog[i].pin_gpio);
+        }
+        else{
+            gpio_put(gpio_bitdog[i].pin_gpio, false);
+        }
+    }
 }
 
 // Função de callback ao aceitar conexões TCP
@@ -142,14 +183,12 @@ static err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
 // Tratamento do request do usuário - digite aqui
 void user_request(char **request){
 
-    if (strstr(*request, "GET /blue_onn") != NULL)
+    if (strstr(*request, "GET /update") != NULL)
     {
-        gpio_put(LED_BLUE_PIN, 1);
-    }
-    else if (strstr(*request, "GET /update") != NULL)
-    {
-        luminosity_value = verify_luminosity();
-        printf("Luminosidade: %d\n", luminosity_value);
+        //luminosity_value = verify_luminosity();
+        //control_lights(luminosity_value);
+        //printf("Luminosidade: %d\n", luminosity_value);
+        // Não faz nada, apenas atualiza a página
     }
 };
 
@@ -179,29 +218,37 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
     char html[1024];
 
     // Instruções html do webserver
-    snprintf(html, sizeof(html), // Formatar uma string e armazená-la em um buffer de caracteres
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: text/html\r\n"
-            "\r\n"
-            "<!DOCTYPE html>\n"
-            "<html>\n"
-            "<head>\n"
-            "<title> Embarcatech - Jardim Inteligente </title>\n"
-            "<style>\n"
-            "body { background-color: #b5e5fb; font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }\n"
-            "h1 { font-size: 64px; margin-bottom: 30px; }\n"
-            "button { background-color: LightGray; font-size: 36px; margin: 10px; padding: 20px 40px; border-radius: 10px; }\n"
-            ".temperature { font-size: 48px; margin-top: 30px; color: #333; }\n"
-            "</style>\n"
-            "</head>\n"
-            "<body>\n"
-            "<h1>Embarcatech: Jardim Inteligente</h1>\n"
-            "<form action=\"./update\"><button>Atualizar Status</button></form>\n"
-            "<p>Luminosidade: %d</p>\n"
-            "</body>\n"
-            "</html>\n",
-            luminosity_value);
-
+    snprintf(html, sizeof(html),
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/html\r\n"
+    "\r\n"
+    "<!DOCTYPE html>\n"
+    "<html>\n"
+    "<head>\n"
+    "<title>Jardim Inteligente</title>\n"
+    "<meta http-equiv=\"refresh\" content=\"5\">  <!-- Auto-atualiza a cada 5s -->\n"
+    "<style>\n"
+    "body { font-family: Arial; text-align: center; background-color: #f0f8ff; }\n"
+    "h1 { color: #006400; }\n"
+    ".status { font-size: 24px; margin: 20px; }\n"
+    ".luminosity { font-size: 48px; color: %s; }\n"
+    "</style>\n"
+    "</head>\n"
+    "<body>\n"
+    "<h1>Jardim Inteligente</h1>\n"
+    "<div class=\"luminosity\">Luminosidade: %d%%</div>\n"
+    "<div class=\"status\">Luzes do jardim: %s</div>\n"
+    "<div class=\"status\">Alarme: <span style=\"color:%s;\">%s</span></div>\n"
+    "<form action=\".update\"><button>Update</button></form>\n"
+    "</body>\n"
+    "</html>",
+    (luminosity_value < 30 ? "red" : "green"),  // Cor da luminosidade
+    luminosity_value,
+    (luminosity_value < 30 ? "LIGADAS" : "DESLIGADAS"),
+    (alert ? "red" : "green"),                  // Cor do texto do alarme
+    (alert ? "ATIVADO" : "DESATIVADO")         // Texto do alarme
+    );
+    
     // Escreve dados para envio (mas não os envia imediatamente).
     tcp_write(tpcb, html, strlen(html), TCP_WRITE_FLAG_COPY);
 
@@ -217,3 +264,39 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
     return ERR_OK;
 }
 
+void init_display()
+{
+    i2c_init(I2C_PORT, 400 * 1000);
+    gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
+    gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
+    gpio_pull_up(I2C_SDA);
+    gpio_pull_up(I2C_SCL);
+
+    ssd1306_init(&ssd, WIDTH, HEIGHT, false, ADRESS, I2C_PORT);
+    ssd1306_config(&ssd);
+    ssd1306_fill(&ssd, false);
+
+    ssd1306_send_data(&ssd);
+}
+
+void gpio_irq_handler(uint gpio, uint32_t events)
+{
+    uint32_t current_time = to_us_since_boot(get_absolute_time());
+    
+    if(current_time - last_time > 200000){
+        last_time = current_time;
+        // Qualquer um dos sensores de presença (simulado por botões) foi pressionado, aciona o alerta
+        alert = !alert;
+    }
+}
+
+void alert_lights()
+{
+    if(alert){
+        gpio_put(gpio_bitdog[2].pin_gpio, true);
+        sleep_ms(500);
+        gpio_put(gpio_bitdog[2].pin_gpio, false);
+    } else{
+        gpio_put(gpio_bitdog[2].pin_gpio, false);
+    }
+}
